@@ -13,4 +13,7 @@ add_subdirectory(sqlite3)
 add_executable(poc main.cpp
                    config.cpp)
 
+add_executable(exec exec.cpp)
+
 target_link_libraries(poc sqlite3)
+target_link_libraries(exec sqlite3)

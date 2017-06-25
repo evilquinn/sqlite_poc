@@ -11,8 +11,14 @@ public:
 
     bool save(const std::string& name, const std::string& value);
     std::string read(const std::string& name) const;
+    bool backup(const std::string& backup_path);
 
 private:
+
+    static int set_value_callback(void* void_value,
+                                  int columns,
+                                  char** values,
+                                  char** column_names);
     sqlite3* database_;
 };
 
