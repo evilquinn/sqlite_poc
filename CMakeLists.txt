@@ -6,8 +6,11 @@ set(CMAKE_CXX_FLAGS_DEBUG
     "${CMAKE_CXX_FLAGS} -O0 -g3 -pg -ftest-coverage -fprofile-arcs")
 
 include_directories($ENV{BOOST_ROOT})
+include_directories(sqlite3)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 add_subdirectory(sqlite3)
-add_executable(poc main.cpp)
+add_executable(poc main.cpp
+                   config.cpp)
 
 target_link_libraries(poc sqlite3)
