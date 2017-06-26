@@ -35,6 +35,20 @@ int main(int argc, char* argv[])
 
       std::cout << "FULL DUMP:" << std::endl << c << std::endl;
 
+      c.backup_or_recover("/home/evilquinn/git/sqlite_poc/build/config.db.bk2",
+                          true);
+
+      c.save("name3", "niall");
+      c.save("name4", "is");
+      c.save("name5", "king");
+
+      std::cout << "FULL DUMP:" << std::endl << c << std::endl;
+
+      c.backup_or_recover("/home/evilquinn/git/sqlite_poc/build/config.db.bk2",
+                          false);
+
+      std::cout << "FULL DUMP:" << std::endl << c << std::endl;
+
   }
   catch ( std::runtime_error& e )
   {
