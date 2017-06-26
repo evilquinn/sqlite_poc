@@ -97,59 +97,10 @@ bool config::save(const std::string& name, const std::string& value)
     return true;
 }
 
-bool config::backup(const std::string& backup_path)
-{
-    int rc;                     /* Function return code */
-    sqlite3* backup_handle;     /* Database connection opened on zFilename */
-    sqlite3_backup* backup_db;  /* Backup handle used to copy data */
-
-    /* Open the database file identified by zFilename. */
-    rc = sqlite3_open(backup_path.c_str(), &backup_handle);
-    if( rc == SQLITE_OK )
-    {
-        /* Open the sqlite3_backup object used to accomplish the transfer */
-        backup_db = sqlite3_backup_init(backup_handle, "main", database_, "main");
-        if( backup_db )
-        {
-
-          /* Each iteration of this loop copies 5 database pages from database
-          ** pDb to the backup database. If the return value of backup_step()
-          ** indicates that there are still further pages to copy, sleep for
-          ** 250 ms before repeating. */
-          do
-          {
-              rc = sqlite3_backup_step(backup_db, 5);
-              if( rc==SQLITE_OK || rc==SQLITE_BUSY || rc==SQLITE_LOCKED ){
-                  sqlite3_sleep(250);
-              }
-          }
-          while( rc==SQLITE_OK || rc==SQLITE_BUSY || rc==SQLITE_LOCKED );
-
-          /* Release resources allocated by backup_init(). */
-          sqlite3_backup_finish(backup_db);
-        }
-        rc = sqlite3_errcode(backup_handle);
-        return true;
-    }
-    return false;
-}
-
 /*
-** This function is used to load the contents of a database file on disk 
-** into the "main" database of open database connection pInMemory, or
-** to save the current contents of the database opened by pInMemory into
-** a database file on disk. pInMemory is probably an in-memory database, 
-** but this function will also work fine if it is not.
-**
-** Parameter zFilename points to a nul-terminated string containing the
-** name of the database file on disk to load from or save to. If parameter
-** isSave is non-zero, then the contents of the file zFilename are 
-** overwritten with the contents of the database opened by pInMemory. If
-** parameter isSave is zero, then the contents of the database opened by
-** pInMemory are replaced by data loaded from the file zFilename.
-**
-** If the operation is successful, SQLITE_OK is returned. Otherwise, if
-** an error occurs, an SQLite error code is returned.
+ * Either backup to or recover from specified file
+ *
+ * If backup is true, save to file, else load from file
 */
 int config::backup_or_recover(const std::string& backup_path, bool backup)
 {
@@ -162,39 +113,22 @@ int config::backup_or_recover(const std::string& backup_path, bool backup)
     /* Open the database file identified by zFilename. Exit early if this fails
     ** for any reason. */
     rc = sqlite3_open(backup_path.c_str(), &backup_file);
-    if( rc==SQLITE_OK ){
+    if( rc==SQLITE_OK )
+    {
+        // backing up or recovering?
+        source_db = (backup ? database_   : backup_file);
+        sink_db   = (backup ? backup_file : database_);
 
-        /* If this is a 'load' operation (isSave==0), then data is copied
-        ** from the database file just opened to database pInMemory. 
-        ** Otherwise, if this is a 'save' operation (isSave==1), then data
-        ** is copied from pInMemory to pFile.  Set the variables pFrom and
-        ** pTo accordingly. */
-        source_db = (backup ? backup_file : database_);
-        sink_db   = (backup ? database_   : backup_file);
-
-        /* Set up the backup procedure to copy from the "main" database of 
-        ** connection pFile to the main database of connection pInMemory.
-        ** If something goes wrong, pBackup will be set to NULL and an error
-        ** code and message left in connection pTo.
-        **
-        ** If the backup object is successfully created, call backup_step()
-        ** to copy data from pFile to pInMemory. Then call backup_finish()
-        ** to release resources associated with the pBackup object.  If an
-        ** error occurred, then an error code and message will be left in
-        ** connection pTo. If no error occurred, then the error code belonging
-        ** to pTo is set to SQLITE_OK.
-        */
+        // copy from source to sink
         backup_ctx = sqlite3_backup_init(sink_db, "main", source_db, "main");
         if( backup_ctx )
         {
+            // in a single step, no paging
             (void)sqlite3_backup_step(backup_ctx, -1);
             (void)sqlite3_backup_finish(backup_ctx);
         }
         rc = sqlite3_errcode(sink_db);
     }
-
-    /* Close the database connection opened on database file zFilename
-    ** and return the result of this function. */
     (void)sqlite3_close(backup_file);
     return rc;
 }

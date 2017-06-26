@@ -31,8 +31,6 @@ int main(int argc, char* argv[])
       std::cin >> pause;
       pause = 0;
 
-      c.backup("/home/evilquinn/git/sqlite_poc/build/config.db.bkup");
-
       std::cout << "FULL DUMP:" << std::endl << c << std::endl;
 
       c.backup_or_recover("/home/evilquinn/git/sqlite_poc/build/config.db.bk2",
