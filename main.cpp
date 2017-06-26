@@ -33,6 +33,8 @@ int main(int argc, char* argv[])
 
       c.backup("/home/evilquinn/git/sqlite_poc/build/config.db.bkup");
 
+      std::cout << "FULL DUMP:" << std::endl << c << std::endl;
+
   }
   catch ( std::runtime_error& e )
   {
