@@ -3,6 +3,10 @@
 #include <sstream>
 #include <sqlite3.h>
 #include <memory>
+#include <thread>
+#include <mutex>
+#include <boost/range/irange.hpp>
+#include <map>
 
 typedef std::unique_ptr<sqlite3,
                         decltype(&sqlite3_close_v2)> database;
@@ -11,6 +15,16 @@ typedef std::unique_ptr<sqlite3_stmt,
 
 namespace db
 {
+
+std::string error_string(const database& db, const int error_code)
+{
+    std::stringstream errstr;
+    errstr << "errcode: " << sqlite3_errcode(db.get()) << "\n"
+           << "ext.errcode: " << sqlite3_extended_errcode(db.get()) << "\n"
+           << "errmsg: " << sqlite3_errmsg(db.get()) << "\n"
+           << "errstr: " << sqlite3_errstr(error_code) << "\n";
+    return errstr.str();
+}
 
 database open(const std::string& filename)
 {
@@ -22,11 +36,7 @@ database open(const std::string& filename)
         std::stringstream errstr;
         errstr << "Error opening: " << filename
                << "\n"
-               << "errcode: " << sqlite3_errcode(temp_handle) << "\n"
-               << "ext.errcode: " << sqlite3_extended_errcode(temp_handle)
-               << "\n"
-               << "errmsg: " << sqlite3_errmsg(temp_handle) << "\n"
-               << "errstr: " << sqlite3_errstr(open_result) << "\n";
+               << error_string(db, open_result);
         throw std::runtime_error(errstr.str());
     }
     return db;
@@ -47,13 +57,53 @@ database_stmt prepare(const database& db,
         std::stringstream errstr;
         errstr << "Error preparing statement:\n"
                << statement << "\n"
-               << "errcode: " << sqlite3_errcode(db.get()) << "\n"
-               << "ext.errcode: " << sqlite3_extended_errcode(db.get()) << "\n"
-               << "errmsg: " << sqlite3_errmsg(db.get()) << "\n"
-               << "errstr: " << sqlite3_errstr(prepare_result) << "\n";
+               << error_string(db, prepare_result);
         throw std::runtime_error(errstr.str());
     }
     return stmt;
+}
+
+typedef std::map<std::string, std::string> column_value_pairs;
+typedef int (*row_callback)(void*, const column_value_pairs&);
+int execute(const database_stmt& statement, row_callback callback, void* userdata)
+{
+    int step_result;
+    do
+    {
+        step_result = sqlite3_step(statement.get());
+        switch ( step_result )
+        {
+        case SQLITE_ROW :
+        {
+            column_value_pairs column_values;
+            for ( int i : boost::irange(0, sqlite3_column_count(statement.get())) )
+            {
+                std::stringstream val;
+                val << sqlite3_column_text(statement.get(), i);
+                column_values[sqlite3_column_name(statement.get(), i)] = val.str();
+            }
+            callback(userdata, column_values);
+            break;
+        } // end SQLITE_ROW
+        case SQLITE_DONE :
+        {
+            // no op
+            break;
+        } // end SQLITE_DONE
+        default :
+        {
+            // some error
+            std::stringstream errstr;
+            errstr << "Error stepping statement:\n"
+                   << sqlite3_sql(statement.get())
+                   << "\n";
+            throw std::runtime_error(errstr.str());
+        } // end default
+        } // end switch
+    }
+    while ( step_result == SQLITE_ROW );
+
+    return step_result;
 }
 
 } // end namespace db
@@ -61,17 +111,62 @@ database_stmt prepare(const database& db,
 std::string get_value(const database& db,
                       const std::string& key)
 {
-    std::string sql = "select value from keys where key = ?";
+    // one-time static init
+    static std::string sql = "select value from keys where key = ?";
     static database_stmt stmt = db::prepare(db, sql.c_str());
-    sqlite3_reset(stmt.get());
-    sqlite3_bind_text(stmt.get(), 1, key.c_str(), -1, NULL);
-    if ( sqlite3_step(stmt.get()) == SQLITE_ROW )
+    static std::mutex stmt_mutex;
+
+    // get a lock so no one else blatters the prepared statement
+    std::lock_guard<std::mutex> get_value_stmt_lock(stmt_mutex);
+
+    sqlite3_bind_text(stmt.get(), 1, key.c_str(), key.size(), NULL);
+    std::stringstream val;
+    int step_result = sqlite3_step(stmt.get());
+    switch ( step_result )
     {
-        std::stringstream val;
+    case SQLITE_ROW :
+    {
         val << sqlite3_column_text(stmt.get(), 0);
-        return val.str();
+        break;
+    } // end SQLITE_ROW
+    case SQLITE_DONE :
+    {
+        // no op
+        break;
+    } // end SQLITE_DONE
+    default :
+    {
+        // some error
+        std::stringstream errstr;
+        errstr << "Error getting value for: " << key
+               << "\n"
+               << db::error_string(db, step_result);
+        throw std::runtime_error(errstr.str());
+    } // end default
+    } // end switch
+
+    sqlite3_reset(stmt.get());
+    return val.str();
+}
+
+void do_get_values(const database& db,
+                   const std::string& key)
+{
+    for ( int i : boost::irange(0, 100) )
+    {
+        std::cout << key << "(" << i << ") : "
+                  << get_value(db, key) << std::endl;
     }
-    return "";
+}
+
+int my_callback(void*, const db::column_value_pairs& cvp)
+{
+    for ( const auto& e : cvp )
+    {
+        std::cout << e.first << " : " << e.second << std::endl;
+    }
+
+    return 0;
 }
 
 int main(int argc, char* argv[])
@@ -101,45 +196,19 @@ int main(int argc, char* argv[])
             sqlite3_errstr(insert_result),
             insert_result);
 
-    stmt = db::prepare(super_db, "select * from keys");
-
-    printf("Got results:\n");
-    int step_result = 0;
-    for ( step_result = sqlite3_step(stmt.get());
-          step_result == SQLITE_ROW;
-          step_result = sqlite3_step(stmt.get()))
-    {
-        printf("Step result: %s (%d)\n",
-                sqlite3_errstr(step_result),
-                step_result);
-        int num_cols = sqlite3_column_count(stmt.get());
-
-        for (int i = 0; i < num_cols; i++)
-        {
-            switch (sqlite3_column_type(stmt.get(), i))
-            {
-            case (SQLITE3_TEXT):
-                printf("%s, ", sqlite3_column_text(stmt.get(), i));
-                break;
-            case (SQLITE_INTEGER):
-                printf("%d, ", sqlite3_column_int(stmt.get(), i));
-                break;
-            case (SQLITE_FLOAT):
-                printf("%g, ", sqlite3_column_double(stmt.get(), i));
-                break;
-            default:
-                break;
-            }
-        }
-        printf("\n");
-
-    }
-    printf("Step result: %s (%d)\n",
-            sqlite3_errstr(step_result),
-            step_result);
-
     std::cout << "firstname: " << get_value(super_db, "firstname") << std::endl;
     std::cout << "lastname: " << get_value(super_db, "lastname") << std::endl;
+
+    std::cout << "threads:" << std::endl;
+
+    std::thread get_firstnames(do_get_values, std::ref(super_db), "firstname");
+    std::thread get_lastnames(do_get_values, std::ref(super_db), "lastname");
+
+    get_firstnames.join();
+    get_lastnames.join();
+
+    stmt = db::prepare(super_db, "select * from keys");
+    db::execute(stmt, my_callback, NULL);
 
     return 0;
 }
