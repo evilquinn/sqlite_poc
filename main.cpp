@@ -6,6 +6,7 @@
 #include <thread>
 #include <mutex>
 #include <boost/range/irange.hpp>
+#include <boost/bind.hpp>
 #include <map>
 #include <functional>
 
@@ -17,12 +18,12 @@ typedef std::unique_ptr<sqlite3_stmt,
 namespace db
 {
 
-std::string error_string(const database& db, const int error_code)
+std::string error_string(sqlite3* const db, const int error_code)
 {
     std::stringstream errstr;
-    errstr << "errcode: " << sqlite3_errcode(db.get()) << "\n"
-           << "ext.errcode: " << sqlite3_extended_errcode(db.get()) << "\n"
-           << "errmsg: " << sqlite3_errmsg(db.get()) << "\n"
+    errstr << "errcode: " << sqlite3_errcode(db) << "\n"
+           << "ext.errcode: " << sqlite3_extended_errcode(db) << "\n"
+           << "errmsg: " << sqlite3_errmsg(db) << "\n"
            << "errstr: " << sqlite3_errstr(error_code) << "\n";
     return errstr.str();
 }
@@ -37,7 +38,7 @@ database open(const std::string& filename)
         std::stringstream errstr;
         errstr << "Error opening: " << filename
                << "\n"
-               << error_string(db, open_result);
+               << error_string(db.get(), open_result);
         throw std::runtime_error(errstr.str());
     }
     return db;
@@ -58,7 +59,7 @@ database_stmt prepare(const database& db,
         std::stringstream errstr;
         errstr << "Error preparing statement:\n"
                << statement << "\n"
-               << error_string(db, prepare_result);
+               << error_string(db.get(), prepare_result);
         throw std::runtime_error(errstr.str());
     }
     return stmt;
@@ -102,7 +103,9 @@ int execute(const database_stmt& statement, row_callback callback)
             std::stringstream errstr;
             errstr << "Error stepping statement:\n"
                    << sqlite3_sql(statement.get())
-                   << "\n";
+                   << "\n"
+                   << error_string(sqlite3_db_handle(statement.get()),
+                                   step_result);
             throw std::runtime_error(errstr.str());
         } // end default
         } // end switch
@@ -114,6 +117,11 @@ int execute(const database_stmt& statement, row_callback callback)
 
 } // end namespace db
 
+void my_callback(std::string& value, const db::column_value_pairs& cvp)
+{
+    value = cvp.begin()->second;
+}
+
 std::string get_value(const database& db,
                       const std::string& key)
 {
@@ -123,15 +131,16 @@ std::string get_value(const database& db,
     static std::mutex stmt_mutex;
 
     // get a lock so no one else blatters the prepared statement
-    std::lock_guard<std::mutex> get_value_stmt_lock(stmt_mutex);
+    std::lock_guard<std::mutex> stmt_lock(stmt_mutex);
 
     sqlite3_bind_text(stmt.get(), 1, key.c_str(), key.size(), NULL);
 
     std::string value;
-    db::execute(stmt, [&](const db::column_value_pairs& cvp)
-    {
-        value = cvp.begin()->second;
-    });
+    db::execute(stmt, boost::bind(::my_callback, std::ref(value), _1));
+//    db::execute(stmt, [&](const db::column_value_pairs& cvp)
+//    {
+//        value = cvp.begin()->second;
+//    });
 
     sqlite3_reset(stmt.get());
     return value;
@@ -146,6 +155,7 @@ void do_get_values(const database& db,
                   << get_value(db, key) << std::endl;
     }
 }
+
 
 int main(int argc, char* argv[])
 {
