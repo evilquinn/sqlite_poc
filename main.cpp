@@ -194,13 +194,7 @@ int main(int argc, char* argv[])
     get_lastnames.join();
 
     stmt = db::prepare(super_db, "select * from keys");
-    db::execute<void*>(stmt, NULL, [&](void*, const db::column_value_pairs& cvp)
-    {
-        for ( const auto& e : cvp )
-        {
-            std::cout << e.first << " : " << e.second << std::endl;
-        }
-    });
+    db::execute<void*>(stmt, NULL, my_callback);
 
     return 0;
 }
