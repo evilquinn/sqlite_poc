@@ -65,9 +65,8 @@ database_stmt prepare(const database& db,
 }
 
 typedef std::map<std::string, std::string> column_value_pairs;
-typedef std::function<int (void*, const column_value_pairs&)> row_callback;
-template<typename T>
-int execute(const database_stmt& statement, void* userdata, std::function<int (T, const column_value_pairs&)> callback)
+typedef std::function<void (const column_value_pairs&)> row_callback;
+int execute(const database_stmt& statement, row_callback callback)
 {
     int step_result;
     do
@@ -89,7 +88,7 @@ int execute(const database_stmt& statement, void* userdata, std::function<int (T
                 val << sqlite3_column_text(statement.get(), i);
                 column_values[sqlite3_column_name(statement.get(), i)] = val.str();
             }
-            callback(userdata, column_values);
+            callback(column_values);
             break;
         } // end SQLITE_ROW
         case SQLITE_DONE :
@@ -115,13 +114,6 @@ int execute(const database_stmt& statement, void* userdata, std::function<int (T
 
 } // end namespace db
 
-int get_value_callback(void* userdata, const db::column_value_pairs& cvp)
-{
-    std::string* value = reinterpret_cast<std::string*>(userdata);
-    *value = cvp.begin()->second;
-    return 0;
-}
-
 std::string get_value(const database& db,
                       const std::string& key)
 {
@@ -136,7 +128,10 @@ std::string get_value(const database& db,
     sqlite3_bind_text(stmt.get(), 1, key.c_str(), key.size(), NULL);
 
     std::string value;
-    db::execute<void*>(stmt, &value, get_value_callback);
+    db::execute(stmt, [&](const db::column_value_pairs& cvp)
+    {
+        value = cvp.begin()->second;
+    });
 
     sqlite3_reset(stmt.get());
     return value;
@@ -150,16 +145,6 @@ void do_get_values(const database& db,
         std::cout << key << "(" << i << ") : "
                   << get_value(db, key) << std::endl;
     }
-}
-
-int my_callback(void*, const db::column_value_pairs& cvp)
-{
-    for ( const auto& e : cvp )
-    {
-        std::cout << e.first << " : " << e.second << std::endl;
-    }
-
-    return 0;
 }
 
 int main(int argc, char* argv[])
@@ -177,10 +162,10 @@ int main(int argc, char* argv[])
         " ( 'lastname', 'Quinn' );";
 
     database_stmt stmt(db::prepare(super_db, create_statement));
-    db::execute<void*>(stmt, NULL, NULL);
+    db::execute(stmt, nullptr);
 
     stmt = db::prepare(super_db, insert_statement);
-    db::execute<void*>(stmt, NULL, NULL);
+    db::execute(stmt, NULL);
 
     std::cout << "firstname: " << get_value(super_db, "firstname") << std::endl;
     std::cout << "lastname: " << get_value(super_db, "lastname") << std::endl;
@@ -194,7 +179,14 @@ int main(int argc, char* argv[])
     get_lastnames.join();
 
     stmt = db::prepare(super_db, "select * from keys");
-    db::execute<void*>(stmt, NULL, my_callback);
+    db::execute(stmt, [](const db::column_value_pairs& cvp)
+    {
+        for ( const auto& e : cvp )
+        {
+            std::cout << e.second << ", ";
+        }
+        std::cout << std::endl;
+    });
 
     return 0;
 }
