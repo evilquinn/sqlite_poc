@@ -7,6 +7,7 @@
 #include <mutex>
 #include <boost/range/irange.hpp>
 #include <map>
+#include <functional>
 
 typedef std::unique_ptr<sqlite3,
                         decltype(&sqlite3_close_v2)> database;
@@ -64,8 +65,9 @@ database_stmt prepare(const database& db,
 }
 
 typedef std::map<std::string, std::string> column_value_pairs;
-typedef int (*row_callback)(void*, const column_value_pairs&);
-int execute(const database_stmt& statement, row_callback callback, void* userdata)
+typedef std::function<int (void*, const column_value_pairs&)> row_callback;
+template<typename T>
+int execute(const database_stmt& statement, void* userdata, std::function<int (T, const column_value_pairs&)> callback)
 {
     int step_result;
     do
@@ -75,6 +77,11 @@ int execute(const database_stmt& statement, row_callback callback, void* userdat
         {
         case SQLITE_ROW :
         {
+            if ( !callback )
+            {
+                // don't bother if there's nothing to call
+                break;
+            }
             column_value_pairs column_values;
             for ( int i : boost::irange(0, sqlite3_column_count(statement.get())) )
             {
@@ -108,6 +115,13 @@ int execute(const database_stmt& statement, row_callback callback, void* userdat
 
 } // end namespace db
 
+int get_value_callback(void* userdata, const db::column_value_pairs& cvp)
+{
+    std::string* value = reinterpret_cast<std::string*>(userdata);
+    *value = cvp.begin()->second;
+    return 0;
+}
+
 std::string get_value(const database& db,
                       const std::string& key)
 {
@@ -120,33 +134,12 @@ std::string get_value(const database& db,
     std::lock_guard<std::mutex> get_value_stmt_lock(stmt_mutex);
 
     sqlite3_bind_text(stmt.get(), 1, key.c_str(), key.size(), NULL);
-    std::stringstream val;
-    int step_result = sqlite3_step(stmt.get());
-    switch ( step_result )
-    {
-    case SQLITE_ROW :
-    {
-        val << sqlite3_column_text(stmt.get(), 0);
-        break;
-    } // end SQLITE_ROW
-    case SQLITE_DONE :
-    {
-        // no op
-        break;
-    } // end SQLITE_DONE
-    default :
-    {
-        // some error
-        std::stringstream errstr;
-        errstr << "Error getting value for: " << key
-               << "\n"
-               << db::error_string(db, step_result);
-        throw std::runtime_error(errstr.str());
-    } // end default
-    } // end switch
+
+    std::string value;
+    db::execute<void*>(stmt, &value, get_value_callback);
 
     sqlite3_reset(stmt.get());
-    return val.str();
+    return value;
 }
 
 void do_get_values(const database& db,
@@ -184,17 +177,10 @@ int main(int argc, char* argv[])
         " ( 'lastname', 'Quinn' );";
 
     database_stmt stmt(db::prepare(super_db, create_statement));
-
-    int create_result = sqlite3_step(stmt.get());
-    printf("Create result: %s (%d)\n",
-            sqlite3_errstr(create_result),
-            create_result);
+    db::execute<void*>(stmt, NULL, NULL);
 
     stmt = db::prepare(super_db, insert_statement);
-    int insert_result = sqlite3_step(stmt.get());
-    printf("Insert result: %s (%d)\n",
-            sqlite3_errstr(insert_result),
-            insert_result);
+    db::execute<void*>(stmt, NULL, NULL);
 
     std::cout << "firstname: " << get_value(super_db, "firstname") << std::endl;
     std::cout << "lastname: " << get_value(super_db, "lastname") << std::endl;
@@ -208,7 +194,13 @@ int main(int argc, char* argv[])
     get_lastnames.join();
 
     stmt = db::prepare(super_db, "select * from keys");
-    db::execute(stmt, my_callback, NULL);
+    db::execute<void*>(stmt, NULL, [&](void*, const db::column_value_pairs& cvp)
+    {
+        for ( const auto& e : cvp )
+        {
+            std::cout << e.first << " : " << e.second << std::endl;
+        }
+    });
 
     return 0;
 }
