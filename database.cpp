@@ -12,11 +12,12 @@ std::string database::error_string(sqlite3* const db, const int error_code)
     return errstr.str();
 }
 
-database::database(const std::string& filename)
+database::database(const std::string& filename):
+    db_(NULL, sqlite3_close_v2)
 {
     sqlite3* temp_handle;
     int open_result = sqlite3_open(filename.c_str(), &temp_handle);
-    db_ = db(temp_handle, sqlite3_close_v2);
+    db_ = std::move(db(temp_handle, sqlite3_close_v2));
     if ( open_result != SQLITE_OK )
     {
         std::stringstream errstr;

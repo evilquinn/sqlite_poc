@@ -13,7 +13,6 @@ public:
         row_callback;
 
     database_stmt(database& db, const std::string& statement);
-    virtual ~database_stmt(){}
 
     virtual int execute(row_callback callback);
     virtual sqlite3_stmt* get()
@@ -22,7 +21,8 @@ public:
     }
 
 private:
-    typedef std::shared_ptr<sqlite3_stmt> db_stmt;
+    typedef std::unique_ptr<sqlite3_stmt,
+                            decltype(&sqlite3_finalize)> db_stmt;
     db_stmt db_stmt_;
 };
 
