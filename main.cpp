@@ -29,6 +29,8 @@ std::string get_value(database& db,
     // get a lock so no one else blatters the prepared statement
     std::lock_guard<std::mutex> stmt_lock(stmt_mutex);
 
+    sqlite3_reset(stmt.get());
+
     sqlite3_bind_text(stmt.get(), 1, key.c_str(), key.size(), NULL);
 
     std::string value;
@@ -38,7 +40,6 @@ std::string get_value(database& db,
 //        value = cvp.begin()->second;
 //    });
 
-    sqlite3_reset(stmt.get());
     return value;
 }
 
