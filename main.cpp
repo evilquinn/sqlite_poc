@@ -23,25 +23,19 @@ std::string get_value(database& db,
                       const std::string& key)
 {
     // one-time static init
-    static std::string sql = "select value from keys where key = ?";
+    static std::string sql = "select value from keys where key = $key";
     static database_stmt stmt(db, sql.c_str());
     static std::mutex stmt_mutex;
 
     // get a lock so no one else blatters the shared prepared statement
     std::lock_guard<std::mutex> stmt_lock(stmt_mutex);
 
-    sqlite3_reset(stmt.handle());
-    int bind_result = sqlite3_bind_text(stmt.handle(), 1, key.c_str(), key.size(), NULL);
-    if ( bind_result != SQLITE_OK )
+    database::column_value_pairs cvp =
     {
-        std::stringstream errstr;
-        errstr << "Failed to bind " << key << " to stmt " << sql << ":\n"
-               << database::error_string(db.handle(), bind_result);
-        throw std::runtime_error(errstr.str());
-    }
-
+        { "$key", key }
+    };
     std::string value;
-    stmt.execute(boost::bind(::my_callback, std::ref(value), _1));
+    stmt.execute(cvp, boost::bind(::my_callback, std::ref(value), _1));
 //    db::execute(stmt, [&](const db::column_value_pairs& cvp)
 //    {
 //        value = cvp.begin()->second;

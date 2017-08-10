@@ -22,16 +22,20 @@ std::string config::read(const std::string& name) const
 {
     static database_stmt stmt(
         *(db_.get()),
-        "select value from config_table where name = ?");
+        "select value from config_table where name = $name");
     static std::mutex stmt_mutex;
 
-    std::lock_guard<std::mutex> lock(stmt_mutex);
 
-    sqlite3_reset(stmt.handle());
-    sqlite3_bind_text(stmt.handle(), 1, name.c_str(), name.size(), NULL);
+    database::column_value_pairs cvp =
+    {
+        { "$name", name }
+    };
 
     std::string value;
-    stmt.execute([&](const database::column_value_pairs& cvp)
+
+
+    std::lock_guard<std::mutex> lock(stmt_mutex);
+    stmt.execute(cvp, [&](const database::column_value_pairs& cvp)
     {
         value = cvp.begin()->second;
     });
@@ -42,15 +46,18 @@ void config::save(const std::string& name, const std::string& value)
 {
     static database_stmt stmt(
         *(db_.get()),
-        "INSERT OR REPLACE INTO config_table ( name, value ) VALUES ( ?, ? )");
+        "INSERT OR REPLACE INTO config_table ( name, value ) VALUES ( $name, $value )");
     static std::mutex stmt_mutex;
+
+    database::column_value_pairs cvp =
+    {
+        { "$name",  name  },
+        { "$value", value }
+    };
 
     std::lock_guard<std::mutex> lock(stmt_mutex);
 
-    sqlite3_bind_text(stmt.handle(), 1, name.c_str(), name.size(), NULL);
-    sqlite3_bind_text(stmt.handle(), 2, value.c_str(), value.size(), NULL);
-
-    stmt.execute();
+    stmt.execute(cvp);
 }
 
 std::ostream& config::print_config(std::ostream& os) const

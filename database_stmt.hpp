@@ -15,6 +15,8 @@ public:
     database_stmt(database& db, const std::string& statement);
 
     virtual void execute(row_callback callback = nullptr);
+    virtual void execute(const database::column_value_pairs& cvp,
+                         row_callback callback = nullptr);
 
     virtual sqlite3_stmt* handle()
     {
