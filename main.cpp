@@ -11,6 +11,7 @@
 #include <functional>
 #include <database.hpp>
 #include <database_stmt.hpp>
+#include <config.hpp>
 
 
 void my_callback(std::string& value, const database::column_value_pairs& cvp)
@@ -26,12 +27,18 @@ std::string get_value(database& db,
     static database_stmt stmt(db, sql.c_str());
     static std::mutex stmt_mutex;
 
-    // get a lock so no one else blatters the prepared statement
+    // get a lock so no one else blatters the shared prepared statement
     std::lock_guard<std::mutex> stmt_lock(stmt_mutex);
 
-    sqlite3_reset(stmt.get());
-
-    sqlite3_bind_text(stmt.get(), 1, key.c_str(), key.size(), NULL);
+    sqlite3_reset(stmt.handle());
+    int bind_result = sqlite3_bind_text(stmt.handle(), 1, key.c_str(), key.size(), NULL);
+    if ( bind_result != SQLITE_OK )
+    {
+        std::stringstream errstr;
+        errstr << "Failed to bind " << key << " to stmt " << sql << ":\n"
+               << database::error_string(db.handle(), bind_result);
+        throw std::runtime_error(errstr.str());
+    }
 
     std::string value;
     stmt.execute(boost::bind(::my_callback, std::ref(value), _1));
@@ -46,7 +53,7 @@ std::string get_value(database& db,
 void do_get_values(database& db,
                    const std::string& key)
 {
-    for ( int i : boost::irange(0, 100) )
+    for ( int i : boost::irange(0, 5) )
     {
         std::cout << key << "(" << i << ") : "
                   << get_value(db, key) << std::endl;
@@ -56,6 +63,14 @@ void do_get_values(database& db,
 
 int main(int argc, char* argv[])
 {
+    config c("./config.db");
+
+    c.save("one", "one");
+    c.save("two", "two");
+
+    std::cout << c << std::endl;
+
+
     database super_db("keys.db");
 
     const char* create_statement =

@@ -9,7 +9,7 @@ database_stmt::database_stmt(database& db,
     db_stmt_(NULL, sqlite3_finalize)
 {
     sqlite3_stmt* temp_handle;
-    int prepare_result = sqlite3_prepare_v2(db.get(),
+    int prepare_result = sqlite3_prepare_v2(db.handle(),
                                             statement.c_str(),
                                             statement.size()+1,
                                             &temp_handle,
@@ -20,13 +20,23 @@ database_stmt::database_stmt(database& db,
         std::stringstream errstr;
         errstr << "Error preparing statement:\n"
                << statement << "\n"
-               << database::error_string(db.get(), prepare_result);
+               << database::error_string(db.handle(), prepare_result);
         throw std::runtime_error(errstr.str());
     }
 }
 
-int database_stmt::execute(row_callback callback)
+void database_stmt::execute(row_callback callback)
 {
+    int reset_result = sqlite3_reset(db_stmt_.get());
+    if ( reset_result != SQLITE_OK )
+    {
+        std::stringstream errstr;
+        errstr << "Failed to reset database_stmt:\n"
+               << database::error_string(sqlite3_db_handle(db_stmt_.get()),
+                                         reset_result);
+        throw std::runtime_error(errstr.str());
+    }
+
     int step_result;
     do
     {
@@ -71,6 +81,4 @@ int database_stmt::execute(row_callback callback)
         } // end switch
     }
     while ( step_result == SQLITE_ROW );
-
-    return step_result;
 }
