@@ -46,7 +46,7 @@ void database::backup_or_recover(const std::string& path, sync_direction d)
     sqlite3* sink_db;         // DB to copy to (database_ or backup_file)
     sqlite3* source_db;       // DB to copy from (database_ or backup_file)
 
-    // Open the database file identified by zFilename. Exit early if this fails
+    // Open the database file identified by path
     // for any reason.
     database other_db(path);
 
@@ -63,7 +63,16 @@ void database::backup_or_recover(const std::string& path, sync_direction d)
     if ( ctx )
     {
         // in a single step, no paging
-        sqlite3_backup_step(ctx.get(), -1);
+        int backup_result = sqlite3_backup_step(ctx.get(), -1);
+        if ( backup_result != SQLITE_DONE )
+        {
+            std::stringstream errstr;
+            errstr << "Error executing "
+               << ( d == backup ? "backup" : "restore")
+               << ":\n"
+               << error_string(db_.get(), backup_result);
+            throw std::runtime_error(errstr.str());
+        }
     }
     else
     {

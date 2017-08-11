@@ -42,9 +42,10 @@ void config::save(const std::string& name, const std::string& value)
 {
     static database_stmt stmt(
         *(db_.get()),
-        "INSERT OR REPLACE INTO config_table ( name, value ) VALUES ( $name, $value )");
+        "INSERT OR REPLACE INTO config_table ( name, value ) "
+        "VALUES ( $name, $value )");
 
-    database::column_value_pairs cvp =
+    const database::column_value_pairs cvp =
     {
         { "$name",  name  },
         { "$value", value }
