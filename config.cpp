@@ -23,8 +23,6 @@ std::string config::read(const std::string& name) const
     static database_stmt stmt(
         *(db_.get()),
         "select value from config_table where name = $name");
-    static std::mutex stmt_mutex;
-
 
     database::column_value_pairs cvp =
     {
@@ -33,8 +31,6 @@ std::string config::read(const std::string& name) const
 
     std::string value;
 
-
-    std::lock_guard<std::mutex> lock(stmt_mutex);
     stmt.execute(cvp, [&](const database::column_value_pairs& cvp)
     {
         value = cvp.begin()->second;
@@ -47,15 +43,12 @@ void config::save(const std::string& name, const std::string& value)
     static database_stmt stmt(
         *(db_.get()),
         "INSERT OR REPLACE INTO config_table ( name, value ) VALUES ( $name, $value )");
-    static std::mutex stmt_mutex;
 
     database::column_value_pairs cvp =
     {
         { "$name",  name  },
         { "$value", value }
     };
-
-    std::lock_guard<std::mutex> lock(stmt_mutex);
 
     stmt.execute(cvp);
 }
@@ -65,9 +58,6 @@ std::ostream& config::print_config(std::ostream& os) const
     static database_stmt stmt(
         *(db_.get()),
         "SELECT * FROM config_table");
-    static std::mutex stmt_mutex;
-
-    std::lock_guard<std::mutex> lock(stmt_mutex);
 
     bool print_headers = true;
     stmt.execute([&](const database::column_value_pairs& cvp)

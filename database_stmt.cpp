@@ -6,7 +6,8 @@
 
 database_stmt::database_stmt(database& db,
                              const std::string& statement):
-    db_stmt_(NULL, sqlite3_finalize)
+    db_stmt_(NULL, sqlite3_finalize),
+    db_stmt_mutex_(std::make_unique<std::mutex>())
 {
     sqlite3_stmt* temp_handle;
     int prepare_result = sqlite3_prepare_v2(db.handle(),
@@ -25,7 +26,7 @@ database_stmt::database_stmt(database& db,
     }
 }
 
-void database_stmt::execute(row_callback callback)
+void database_stmt::execute_no_locking(row_callback callback)
 {
     int reset_result = sqlite3_reset(handle());
     if ( reset_result != SQLITE_OK )
@@ -83,9 +84,18 @@ void database_stmt::execute(row_callback callback)
     while ( step_result == SQLITE_ROW );
 }
 
+void database_stmt::execute(row_callback callback)
+{
+    lock_type lock = get_lock();
+
+    execute_no_locking(callback);
+}
+
 void database_stmt::execute(const database::column_value_pairs& cvp,
                             row_callback callback)
 {
+    lock_type lock = get_lock();
+
     int reset_result = sqlite3_reset(handle());
     if ( reset_result != SQLITE_OK )
     {
@@ -126,5 +136,10 @@ void database_stmt::execute(const database::column_value_pairs& cvp,
         }
     }
 
-    this->execute(callback);
+    execute_no_locking(callback);
+}
+
+database_stmt::lock_type database_stmt::get_lock()
+{
+    return lock_type(*(db_stmt_mutex_.get()));
 }

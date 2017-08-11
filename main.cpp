@@ -25,16 +25,13 @@ std::string get_value(database& db,
     // one-time static init
     static std::string sql = "select value from keys where key = $key";
     static database_stmt stmt(db, sql.c_str());
-    static std::mutex stmt_mutex;
-
-    // get a lock so no one else blatters the shared prepared statement
-    std::lock_guard<std::mutex> stmt_lock(stmt_mutex);
 
     database::column_value_pairs cvp =
     {
         { "$key", key }
     };
     std::string value;
+    // can easily use lambdas, other callbacks, etc
     stmt.execute(cvp, boost::bind(::my_callback, std::ref(value), _1));
 //    db::execute(stmt, [&](const db::column_value_pairs& cvp)
 //    {
