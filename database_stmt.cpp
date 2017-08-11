@@ -15,7 +15,7 @@ database_stmt::database_stmt(database& db,
                                             statement.size()+1,
                                             &temp_handle,
                                             NULL);
-    db_stmt_ = std::move(db_stmt(temp_handle, sqlite3_finalize));
+    db_stmt_ = db_stmt(temp_handle, sqlite3_finalize);
     if ( prepare_result != SQLITE_OK )
     {
         std::stringstream errstr;
