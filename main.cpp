@@ -71,8 +71,8 @@ int main(int argc, char* argv[])
     const char* insert_statement =
         "INSERT OR REPLACE INTO keys ( key, value )"
         " VALUES"
-        " ( 'firstname', 'Niall' ),"
-        " ( 'lastname', 'Quinn' );";
+        " ( 'firstname', 'evil' ),"
+        " ( 'lastname', 'quinn' );";
 
     database_stmt stmt(super_db, create_statement);
     stmt.execute(nullptr);
